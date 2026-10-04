@@ -34,6 +34,212 @@
     });
   }
 
+  // ---------------------------------------------------------------
+  // 1. Shorthand expansion. Plain code, not AI, so it is the same every
+  //    time. Small models were misreading things like "R NOF" (right
+  //    neck of femur) and "6/52" (6 weeks), so these are written out in
+  //    full before any model sees the notes.
+  // ---------------------------------------------------------------
+  var SHORTHAND = [
+    [/#\s?NOF\b/g, 'fractured neck of femur'],
+    [/\bNOF\s?#/g, 'neck of femur fracture'],
+    [/\b(\d+(?:\.\d+)?)\s?%\s*(?:on\s+)?RA\b/g, '$1% on room air'],
+    [/\b1\/52\b/g, '1 week'], [/\b(\d+)\/52\b/g, '$1 weeks'],
+    [/\b1\/7\b/g, '1 day'], [/\b(\d+)\/7\b/g, '$1 days'],
+    [/\b1\/12\b/g, '1 month'], [/\b(\d+)\/12\b/g, '$1 months'],
+    [/\bPOD\s?(\d{1,2})\b/g, 'post-operative day $1'],
+    [/\bD(\d{1,2})\b/g, 'day $1'],
+    [/\bNOF\b/g, 'neck of femur'],
+    [/\bRIF\b/g, 'right iliac fossa'], [/\bLIF\b/g, 'left iliac fossa'],
+    [/\bRUQ\b/g, 'right upper quadrant'], [/\bLUQ\b/g, 'left upper quadrant'],
+    [/\bHb\b/g, 'haemoglobin'],
+    [/\bBD\b/gi, 'twice daily'], [/\bTDS\b/gi, 'three times daily'],
+    [/\bQDS\b/gi, 'four times daily'], [/\bOD\b/g, 'once daily'],
+    [/\bPRN\b/gi, 'as needed'], [/\bPO\b/g, 'by mouth'], [/\bIV\b/g, 'intravenous'],
+    [/\bIM\b/g, 'intramuscular'], [/\bSC\b/g, 'subcutaneous'],
+    [/\bOT\b/g, 'occupational therapy'],
+    [/\babx\b/gi, 'antibiotics'],
+    [/\bco-amox\b/gi, 'co-amoxiclav'],
+    [/\bCAP\b/g, 'community-acquired pneumonia'],
+    [/\bUTI\b/g, 'urinary tract infection'],
+    [/\bAF\b/g, 'atrial fibrillation'],
+    [/\bMI\b/g, 'myocardial infarction'],
+    [/\bHTN\b/g, 'hypertension'],
+    [/\bT2DM\b/g, 'type 2 diabetes'], [/\bT1DM\b/g, 'type 1 diabetes'],
+    [/\bSOB\b/g, 'shortness of breath'],
+    [/\bCXR\b/g, 'chest X-ray'],
+    [/\bsats\b/gi, 'oxygen saturations'],
+    [/\br\/v\b/gi, 'review'], [/\bf\/u\b/gi, 'follow-up'], [/\bc\/o\b/gi, 'complaining of'],
+    [/\bPMH\b/g, 'past medical history'], [/\bhx\b/gi, 'history'], [/\bDx\b/g, 'diagnosis'],
+    [/\bNBM\b/g, 'nil by mouth'], [/\bMDT\b/g, 'multidisciplinary team'],
+    [/\bTTO\b/g, 'medicines to take home'],
+    [/\bNWB\b/g, 'non-weight-bearing'], [/\bFWB\b/g, 'full weight-bearing'],
+    [/\bobs\b/gi, 'observations'], [/\bpt\b/g, 'patient']
+  ];
+
+  function expandShorthand(text) {
+    var changes = [];
+    function note(from, to) {
+      var item = from.trim() + ' → ' + to.trim();
+      if (from.trim() !== to.trim() && changes.indexOf(item) === -1) changes.push(item);
+    }
+
+    // Age and sex, e.g. "68F" or "72 M", at the start or after a comma/space.
+    var out = String(text).replace(/(^|[\s,(])(\d{1,3})\s?([FM])\b/g, function (m, pre, age, sex) {
+      if (+age > 120) return m;
+      var to = age + '-year-old ' + (sex === 'F' ? 'woman' : 'man');
+      note(m, to);
+      return pre + to;
+    });
+
+    // Side, e.g. "R hemiarthroplasty" -> "right hemiarthroplasty".
+    out = out.replace(/(^|[\s,(:;])([RL])(?=\s+[A-Za-z])/g, function (m, pre, side, offset, str) {
+      if (/\d\s*$/.test(str.slice(0, offset + pre.length))) return m; // "2 L" means litres
+      var to = side === 'R' ? 'right' : 'left';
+      note(side, to);
+      return pre + to;
+    });
+
+    SHORTHAND.forEach(function (rule) {
+      out = out.replace(rule[0], function (m) {
+        var to = m.replace(new RegExp(rule[0].source, rule[0].flags.replace('g', '')), rule[1]);
+        note(m, to);
+        return to;
+      });
+    });
+
+    // "review 2 weeks" -> "review in 2 weeks"
+    out = out.replace(/\b(review|clinic|follow-up|appointment)\s+(\d+ (?:days?|weeks?|months?))\b/gi, '$1 in $2');
+
+    return { text: out, changes: changes };
+  }
+
+  // ---------------------------------------------------------------
+  // 2. Fact check. Compares the draft with the notes and flags any
+  //    number or date the AI added, and any number from the notes
+  //    that went missing.
+  // ---------------------------------------------------------------
+  var NUMBER_WORDS = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50
+  };
+  var MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December';
+
+  function collectNumbers(text) {
+    var found = {};
+    (String(text).match(/\d+(?:\.\d+)?/g) || []).forEach(function (n) { found[String(parseFloat(n))] = true; });
+    (String(text).toLowerCase().match(/\b[a-z]+\b/g) || []).forEach(function (w) {
+      if (NUMBER_WORDS[w]) found[String(NUMBER_WORDS[w])] = true;
+    });
+    return found;
+  }
+
+  // Words that matter clinically if the AI gets them wrong: body parts,
+  // side, and drug names. Adjective forms are mapped to one word so
+  // "femoral" and "hip" count as "femur", for example.
+  var ANATOMY = {
+    femur: 'femur', femoral: 'femur', hip: 'femur', humerus: 'humerus', humeral: 'humerus',
+    radius: 'radius', radial: 'radius', ulna: 'ulna', ulnar: 'ulna', tibia: 'tibia', tibial: 'tibia',
+    fibula: 'fibula', pelvis: 'pelvis', pelvic: 'pelvis', spine: 'spine', spinal: 'spine',
+    skull: 'skull', rib: 'rib', ribs: 'rib', clavicle: 'clavicle', scapula: 'scapula', patella: 'patella',
+    wrist: 'wrist', ankle: 'ankle', knee: 'knee', elbow: 'elbow', shoulder: 'shoulder',
+    hand: 'hand', foot: 'foot', arm: 'arm', leg: 'leg', shin: 'leg', chest: 'chest',
+    abdomen: 'abdomen', abdominal: 'abdomen', lung: 'lung', lungs: 'lung', pulmonary: 'lung',
+    heart: 'heart', cardiac: 'heart', kidney: 'kidney', renal: 'kidney', liver: 'liver', hepatic: 'liver',
+    bowel: 'bowel', bladder: 'bladder', brain: 'brain', cerebral: 'brain', eye: 'eye', ear: 'ear'
+  };
+  var SIDES = { left: true, right: true, bilateral: true };
+  var DRUG_SUFFIX = /(?:cillin|mycin|cycline|floxacin|azole|parin|pril|sartan|olol|dipine|statin|prazole|tidine|semide|thiazide|xaban|gatran|codone|profen|dronate|dronic|clav|mab|nib)$/i;
+  var DRUG_WORDS = {
+    paracetamol: true, aspirin: true, warfarin: true, insulin: true, metformin: true,
+    prednisolone: true, codeine: true, morphine: true, salbutamol: true, clopidogrel: true,
+    digoxin: true, levothyroxine: true, trimethoprim: true, nitrofurantoin: true, amiodarone: true
+  };
+
+  function termKey(word) {
+    var w = word.toLowerCase();
+    if (ANATOMY[w]) return 'a:' + ANATOMY[w];
+    if (SIDES[w]) return 's:' + w;
+    if (DRUG_WORDS[w] || (w.length > 5 && DRUG_SUFFIX.test(w))) return 'd:' + w;
+    return null;
+  }
+
+  function collectTerms(text) {
+    var found = {};
+    (String(text).match(/[A-Za-z][A-Za-z-]*/g) || []).forEach(function (w) {
+      var k = termKey(w);
+      if (k) found[k] = true;
+    });
+    return found;
+  }
+
+  function renderChecked(letter, sourceText) {
+    var source = collectNumbers(sourceText);
+    var sourceTerms = collectTerms(sourceText);
+    var sourceLower = String(sourceText).toLowerCase();
+    var re = new RegExp('(\\[not documented[^\\]]*\\])|\\b(' + MONTHS + ')\\b|(\\d+(?:\\.\\d+)?)|([A-Za-z][A-Za-z-]*)', 'gi');
+    var html = '';
+    var last = 0;
+    var added = [];
+
+    function flag(m) {
+      if (added.indexOf(m) === -1) added.push(m);
+      return '<mark class="flag" title="Not in your notes. Check this.">' + escapeHtml(m) + '</mark>';
+    }
+
+    letter.replace(re, function (m, gap, month, num, word, offset) {
+      html += escapeHtml(letter.slice(last, offset));
+      if (gap) {
+        html += '<mark>' + escapeHtml(m) + '</mark>';
+      } else if (month) {
+        html += sourceLower.indexOf(m.toLowerCase()) === -1 ? flag(m) : escapeHtml(m);
+      } else if (num) {
+        html += source[String(parseFloat(num))] ? escapeHtml(m) : flag(m);
+      } else {
+        var k = termKey(word);
+        html += (k && !sourceTerms[k]) ? flag(m) : escapeHtml(m);
+      }
+      last = offset + m.length;
+      return m;
+    });
+    html += escapeHtml(letter.slice(last));
+
+    var inDraft = collectNumbers(letter);
+    var missing = Object.keys(source).filter(function (n) { return !inDraft[n]; });
+    return { html: html, added: added, missing: missing };
+  }
+
+  // ---------------------------------------------------------------
+  // 3. The letter's frame is written by code: greeting, "Re:" line and
+  //    sign-off. The AI only writes the body.
+  // ---------------------------------------------------------------
+  function cleanBody(raw) {
+    var lines = String(raw).replace(/\r/g, '').split('\n').map(function (l) {
+      return l.replace(/^\s*#+\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1');
+    });
+    while (lines.length && (/^\s*$/.test(lines[0]) || /^\s*(dear\b|re:|to:|subject:|here is\b)/i.test(lines[0]))) {
+      lines.shift();
+    }
+    var cut = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (/^\s*(yours (sincerely|faithfully)|kind regards|best wishes|many thanks|regards,?\s*$|\[doctor name\])/i.test(lines[i])) { cut = i; break; }
+    }
+    if (cut !== -1) lines = lines.slice(0, cut);
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function frameLetter(type, patient, recipient, body) {
+    var toGP = /\bGP\b|general practi/i.test(recipient) || (!recipient && type !== 'referral');
+    var greeting = toGP ? 'Dear Dr [GP name],' : 'Dear Colleague,';
+    var who = String(patient || '').replace(/\s*\((?:fictional|made[- ]up)\)\s*/gi, ' ').trim();
+    who = who ? who.charAt(0).toUpperCase() + who.slice(1) : '[Patient name]';
+    return greeting + '\n\n' +
+      'Re: ' + who + ', DOB [not documented]\n\n' +
+      body + '\n\n' +
+      'Yours sincerely,\n[Doctor name]';
+  }
+
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---------------------------------------------------------------
@@ -240,14 +446,18 @@
   // ---------------------------------------------------------------
   function buildSystemPrompt(type) {
     var label = LETTER_LABELS[type] || 'clinical letter';
+    var opener = type === 'referral' ? '"Reason for referral:"' : '"Diagnosis:"';
     return 'You are a careful clinical documentation assistant helping a doctor draft a ' + label + '.\n\n' +
       'Rules:\n' +
+      '- Write ONLY the body of the letter. Do not write a greeting ("Dear ..."), a "Re:" line or a sign-off; they are added automatically.\n' +
+      '- Start with a ' + opener + ' line.\n' +
       '- Use only the information given. Never invent findings, results, names, dates, drugs, doses or history.\n' +
       '- If a standard detail is missing, write "[not documented]" instead of guessing.\n' +
-      '- Expand common medical abbreviations into plain clinical English.\n' +
-      '- Use clear, professional UK clinical letter style.\n' +
-      '- This is a first draft that a doctor will check and edit.\n' +
-      '- Output only the letter text. No preamble and no markdown.';
+      '- Abbreviations in the notes have already been written out in full. Keep them in full.\n' +
+      '- Never turn a time period into a calendar date: "6 weeks" stays "6 weeks".\n' +
+      '- Keep every number, drug name and dose exactly as written.\n' +
+      '- Use clear, professional UK English. This is a first draft that a doctor will check.\n' +
+      '- Output plain text only. No markdown.';
   }
 
   function buildUserPrompt(type, patient, recipient, notes) {
@@ -265,22 +475,22 @@
   // different from the "Fill in an example" ones on purpose.
   var WORKED_EXAMPLES = {
     discharge: {
-      patient: '54-year-old man (fictional)',
+      patient: '54M (fictional)',
       recipient: "Patient's GP practice",
-      notes: 'Admitted with RIF pain, diagnosed acute appendicitis\nLaparoscopic appendicectomy day 1, uncomplicated\nEating and drinking, pain controlled with paracetamol\nWound clean and dry\nPlan: home today, GP review in 2 weeks',
-      letter: 'Dear Dr [GP name],\n\nRe: 54-year-old man, DOB [not documented]\n\nDiagnosis: Acute appendicitis\n\nThis patient was admitted with right iliac fossa pain and was diagnosed with acute appendicitis. He underwent an uncomplicated laparoscopic appendicectomy on day 1.\n\nHe is now eating and drinking, and his pain is controlled with paracetamol. His wound is clean and dry.\n\nMedication on discharge: [not documented]\n\nFollow-up: He is being discharged home today. Please review him in your practice in 2 weeks.\n\nYours sincerely,\n[Doctor name]'
+      notes: 'Admitted with RIF pain, diagnosed acute appendicitis\nLaparoscopic appendicectomy D1, uncomplicated\nEating and drinking, pain controlled with paracetamol\nWound clean and dry\nPlan: home today, GP r/v 2/52',
+      body: 'Diagnosis: Acute appendicitis\n\nThis patient was admitted with right iliac fossa pain and was diagnosed with acute appendicitis. He underwent an uncomplicated laparoscopic appendicectomy on day 1.\n\nHe is now eating and drinking, and his pain is controlled with paracetamol. His wound is clean and dry.\n\nMedication on discharge: [not documented]\n\nFollow-up: He is going home today. Please review him in your practice in 2 weeks.'
     },
     referral: {
-      patient: '63-year-old woman (fictional)',
+      patient: '63F (fictional)',
       recipient: 'Dermatology outpatient clinic',
-      notes: 'Changing mole on left shin for 3 months, larger and darker\nIrregular border, 9 mm across\nNo other skin lesions, no history of skin cancer\nRequest: urgent assessment, possible melanoma',
-      letter: 'Dear Colleague,\n\nRe: 63-year-old woman, DOB [not documented]\n\nReason for referral: Changing pigmented lesion on the left shin\n\nThank you for seeing this patient. She has had a mole on her left shin for 3 months that has become larger and darker. It has an irregular border and measures 9 mm across. She has no other skin lesions and no personal history of skin cancer.\n\nPast medical history and medication: [not documented]\n\nRequest: Urgent assessment for possible melanoma.\n\nYours sincerely,\n[Doctor name]'
+      notes: 'Changing mole L shin for 3/12, larger and darker\nIrregular border, 9 mm across\nNo other skin lesions, no hx of skin cancer\nRequest: urgent assessment, possible melanoma',
+      body: 'Reason for referral: Changing pigmented lesion on the left shin\n\nThank you for seeing this patient. She has had a mole on her left shin for 3 months that has become larger and darker. It has an irregular border and measures 9 mm across. She has no other skin lesions and no history of skin cancer.\n\nPast medical history and medication: [not documented]\n\nRequest: Urgent assessment for possible melanoma.'
     },
     clinic: {
-      patient: '29-year-old woman with migraine (fictional)',
+      patient: '29F with migraine (fictional)',
       recipient: "Patient's GP",
-      notes: 'Migraine review, 4 headaches a month, usually with nausea\nTriggers: poor sleep, stress\nStarted propranolol 40 mg BD\nAdvised headache diary\nFollow-up 3 months',
-      letter: 'Dear Dr [GP name],\n\nRe: 29-year-old woman, DOB [not documented]\n\nDiagnosis: Migraine\n\nI reviewed this patient in clinic. She has about 4 headaches a month, usually with nausea. Her main triggers are poor sleep and stress.\n\nPlan: I have started propranolol 40 mg twice daily and advised her to keep a headache diary.\n\nAllergies: [not documented]\n\nFollow-up: I will see her again in 3 months.\n\nYours sincerely,\n[Doctor name]'
+      notes: 'Migraine review, 4 headaches a month, usually with nausea\nTriggers: poor sleep, stress\nStarted propranolol 40 mg BD\nAdvised headache diary\nf/u 3/12',
+      body: 'Diagnosis: Migraine\n\nI reviewed this patient in clinic. She has about 4 headaches a month, usually with nausea. Her main triggers are poor sleep and stress.\n\nPlan: I have started propranolol 40 mg twice daily and advised her to keep a headache diary.\n\nAllergies: [not documented]\n\nFollow-up: I will see her again in 3 months.'
     }
   };
 
@@ -290,12 +500,14 @@
       {
         role: 'system',
         content: buildSystemPrompt(type) + '\n' +
-          '- Follow the layout of the example letter.\n' +
-          '- Use ONLY the facts in the new notes. Never copy facts from the example.\n' +
-          '- Keep every number, drug name and dose exactly as written.'
+          '- Follow the layout of the example.\n' +
+          '- Use ONLY the facts in the new notes. Never copy facts from the example.'
       },
-      { role: 'user', content: buildUserPrompt(type, ex.patient, ex.recipient, ex.notes) },
-      { role: 'assistant', content: ex.letter },
+      {
+        role: 'user',
+        content: buildUserPrompt(type, expandShorthand(ex.patient).text, ex.recipient, expandShorthand(ex.notes).text)
+      },
+      { role: 'assistant', content: ex.body },
       { role: 'user', content: buildUserPrompt(type, patient, recipient, notes) }
     ];
   }
@@ -477,10 +689,42 @@
     errorBox.hidden = true;
   }
 
-  function setOutput(text) {
+  var report = $('check-report');
+
+  function setOutput(text, html) {
     lastText = text;
-    output.innerHTML = highlightGaps(text);
+    output.innerHTML = html || highlightGaps(text);
     output.classList.remove('is-empty');
+  }
+
+  function listHtml(items) {
+    return items.map(function (x) { return '<code>' + escapeHtml(x) + '</code>'; }).join(', ');
+  }
+
+  // The report under the draft: fact check results and expanded shorthand.
+  function showReport(check, changes) {
+    var parts = [];
+    var warn = false;
+    if (check) {
+      if (check.added.length) {
+        warn = true;
+        parts.push('<p><strong>Check the red parts.</strong> These aren\'t in your notes: ' + listHtml(check.added) + '.</p>');
+      }
+      if (check.missing.length) {
+        warn = true;
+        parts.push('<p><strong>Missing from the draft:</strong> these numbers from your notes don\'t appear: ' + listHtml(check.missing) + '.</p>');
+      }
+      if (!warn) {
+        parts.push('<p><strong>Fact check passed.</strong> Every number, date, body part, side and drug in the draft is in your notes, and no numbers are missing. Still read every line.</p>');
+      }
+    }
+    if (changes && changes.length) {
+      parts.push('<details><summary>Shorthand written out before drafting (' + changes.length + ')</summary><p>' +
+        listHtml(changes) + '</p></details>');
+    }
+    report.innerHTML = parts.join('');
+    report.hidden = parts.length === 0;
+    report.classList.toggle('is-warning', warn);
   }
 
   function setBusy(busy) {
@@ -493,18 +737,26 @@
     e.preventDefault();
     clearError();
 
-    var patient = $('patient-info').value.trim();
+    var rawPatient = $('patient-info').value.trim();
     var recipient = $('recipient').value.trim();
-    var notes = $('bullets').value.trim();
+    var rawNotes = $('bullets').value.trim();
     var mode = currentMode();
 
-    if (!notes) {
+    if (!rawNotes) {
       showError('Add at least one line of clinical notes first, or tap "Fill in an example".');
       return;
     }
 
+    // Write out shorthand before anything else sees the notes.
+    var expandedNotes = expandShorthand(rawNotes);
+    var expandedPatient = expandShorthand(rawPatient);
+    var notes = expandedNotes.text;
+    var patient = expandedPatient.text;
+    var changes = expandedPatient.changes.concat(expandedNotes.changes);
+
     if (mode === 'template') {
       setOutput(templateLetter(currentType, patient, recipient, notes));
+      showReport(null, changes);
       setPill('Template', false);
       setStatus('');
       return;
@@ -518,19 +770,25 @@
 
     setBusy(true);
     try {
+      var rawDraft;
       if (mode === 'claude') {
         setStatus('Asking Claude…');
-        setOutput(await writeWithClaude(apiKey, patient, recipient, notes));
+        rawDraft = await writeWithClaude(apiKey, patient, recipient, notes);
         setPill('Claude', true);
         setStatus('');
       } else {
         var result = await writeOnDevice(mode, patient, recipient, notes);
-        setOutput(result.text);
+        rawDraft = result.text;
         var name = MODEL_NAMES[result.modelId] || 'on-device model';
         setPill('On-device AI: ' + name, true);
         var fellBack = mode === 'pro' && TIERS.pro.indexOf(result.modelId) === -1;
         setStatus(fellBack ? 'Pro couldn\'t run on this device, so this draft used the standard model.' : '');
       }
+
+      var letter = frameLetter(currentType, patient, recipient, cleanBody(rawDraft));
+      var check = renderChecked(letter, [patient, recipient, notes].join('\n'));
+      setOutput(letter, check.html);
+      showReport(check, changes);
     } catch (err) {
       setStatus('');
       showError((err && err.message) || 'Something went wrong writing the draft.');
@@ -543,6 +801,7 @@
     lastText = '';
     output.textContent = 'Your draft will appear here.';
     output.classList.add('is-empty');
+    report.hidden = true;
     clearError();
     setStatus('');
     syncMode();
@@ -559,6 +818,9 @@
       navigator.clipboard.writeText(lastText).then(done, function () {});
     }
   });
+
+  // Exposed for testing in the browser console.
+  window.__clinidraft = { expandShorthand: expandShorthand, renderChecked: renderChecked, frameLetter: frameLetter, cleanBody: cleanBody };
 
   runHero();
 })();

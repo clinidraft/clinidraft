@@ -97,7 +97,7 @@
         <li class="step">
           <span class="step-num" aria-hidden="true">2</span>
           <h3>Clinidraft writes the draft</h3>
-          <p>It shapes the notes into the right layout for the letter type, and marks anything the notes didn't cover instead of guessing.</p>
+          <p>It writes out the shorthand, shapes the notes into the right layout, marks anything the notes didn't cover, and flags any number the AI added.</p>
         </li>
         <li class="step">
           <span class="step-num" aria-hidden="true">3</span>
@@ -202,8 +202,12 @@
             <span class="pill" id="mode-pill">Template</span>
           </div>
           <div class="paper-body is-empty" id="letter-output" aria-live="polite">Your draft will appear here.</div>
+          <div class="check-report" id="check-report" aria-live="polite" hidden></div>
           <div class="paper-foot">
-            <span class="paper-legend"><mark>[not documented]</mark> marks details the notes didn't include</span>
+            <span class="paper-legend">
+              <span><mark>[not documented]</mark> missing from the notes</span>
+              <span><mark class="flag">2023</mark> added by the AI, check it</span>
+            </span>
             <span class="paper-buttons">
               <button type="button" class="small-btn" id="copy-btn">Copy</button>
               <button type="button" class="small-btn" id="clear-btn">Clear</button>
@@ -232,7 +236,7 @@
         </li>
         <li>
           <h3>It flags what it doesn't know</h3>
-          <p>The AI modes are told to use only the notes they're given and to write <mark>[not documented]</mark> instead of inventing anything. Small models still make mistakes, so every line needs checking.</p>
+          <p>Shorthand like "R NOF" or "6/52" is written out in full by plain code before any AI sees it. After drafting, the page highlights any number, date, body part, side or drug that isn't in your notes, and lists numbers that went missing. Small models still make mistakes, so every line needs checking.</p>
         </li>
         <li>
           <h3>Private by design</h3>
