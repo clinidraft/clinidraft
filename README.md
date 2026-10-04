@@ -18,7 +18,8 @@ Built by Suriya as a portfolio project for a medicine application.
 ## Safety checks (plain code, not AI)
 
 1. **Shorthand is written out before any AI sees it**, e.g. `R NOF` → right neck of femur, `6/52` → 6 weeks, `BD` → twice daily.
-2. **Fact check after drafting.** Any number, date, body part, side (left/right) or drug name in the draft that isn't in the notes is highlighted in red, and numbers from the notes that went missing are listed.
+2. **Fact check after drafting.** Any number, date, body part, side (left/right) or drug name in the draft that isn't in the notes is highlighted in red. Parts of the notes that don't seem to appear in the draft are listed (e.g. "GP review in 2 weeks").
+4. **UK spelling.** Common US medical spellings (hemoglobin, anemia, edema...) are changed to UK English.
 3. **The greeting, "Re:" line and sign-off are written by code**, so the AI only writes the body.
 
 The AI modes are also told to write `[not documented]` for anything missing, and the page highlights those gaps in yellow.

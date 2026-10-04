@@ -214,6 +214,82 @@
   // 3. The letter's frame is written by code: greeting, "Re:" line and
   //    sign-off. The AI only writes the body.
   // ---------------------------------------------------------------
+  // UK spelling for common medical words the models write in US English.
+  var UK_SPELLING = [
+    [/\bhemoglobin/gi, 'haemoglobin'], [/\bhemodynamic/gi, 'haemodynamic'],
+    [/\bhematolog/gi, 'haematolog'], [/\bhematoma/gi, 'haematoma'], [/\bhemorrhag/gi, 'haemorrhag'],
+    [/\bhematuria/gi, 'haematuria'], [/\banemi/gi, 'anaemi'], [/\bedema/gi, 'oedema'],
+    [/\besophag/gi, 'oesophag'], [/\bestrogen/gi, 'oestrogen'], [/\bpediatric/gi, 'paediatric'],
+    [/\borthopedic/gi, 'orthopaedic'], [/\bgynecolog/gi, 'gynaecolog'], [/\bdiarrhea/gi, 'diarrhoea'],
+    [/\bleukemi/gi, 'leukaemi'], [/\bischemi/gi, 'ischaemi'], [/\bcecum/gi, 'caecum'],
+    [/\bmobiliz/gi, 'mobilis'], [/\bstabiliz/gi, 'stabilis'], [/\bhospitaliz/gi, 'hospitalis'],
+    [/\borganiz/gi, 'organis'], [/\brecogniz/gi, 'recognis'], [/\bminimiz/gi, 'minimis'],
+    [/\bcolor/gi, 'colour'], [/\bbehavior/gi, 'behaviour'], [/\bfavor/gi, 'favour'],
+    [/\bcenter\b/gi, 'centre'], [/\bcenters\b/gi, 'centres'], [/\bliter\b/gi, 'litre'], [/\bliters\b/gi, 'litres']
+  ];
+
+  function ukSpelling(text) {
+    var changed = [];
+    var out = text;
+    UK_SPELLING.forEach(function (rule) {
+      out = out.replace(rule[0], function (m) {
+        var to = rule[1];
+        if (m.charAt(0) === m.charAt(0).toUpperCase()) to = to.charAt(0).toUpperCase() + to.slice(1);
+        var item = m + ' → ' + to;
+        if (changed.indexOf(item) === -1) changed.push(item);
+        return to;
+      });
+    });
+    return { text: out, changes: changed };
+  }
+
+  // Missing-lines check: split the notes into short clauses and list any
+  // whose key words or numbers don't appear in the draft.
+  var STOPWORDS = {
+    the: 1, and: 1, with: 1, from: 1, into: 1, onto: 1, that: 1, this: 1, have: 1, been: 1, were: 1,
+    was: 1, has: 1, had: 1, for: 1, are: 1, but: 1, plan: 1, patient: 1, she: 1, her: 1, his: 1,
+    him: 1, they: 1, then: 1, also: 1, very: 1, some: 1, after: 1, before: 1, over: 1, about: 1,
+    will: 1, your: 1, their: 1, there: 1, when: 1, which: 1, while: 1, each: 1
+  };
+
+  function keyWords(text) {
+    return (String(text).match(/[A-Za-z][A-Za-z']*/g) || []).filter(function (w) {
+      var lower = w.toLowerCase();
+      if (STOPWORDS[lower]) return false;
+      return lower.length >= 4 || /^[A-Z]{2,}$/.test(w); // keep acronyms like GP, CRP
+    }).map(function (w) { return w.toLowerCase(); });
+  }
+
+  function findMissingClauses(notes, letter) {
+    var draftWords = (String(letter).toLowerCase().match(/[a-z][a-z']*/g) || []);
+    var draftNums = collectNumbers(letter);
+
+    function wordPresent(w) {
+      var stem = w.slice(0, Math.min(5, w.length));
+      for (var i = 0; i < draftWords.length; i++) {
+        if (draftWords[i].slice(0, stem.length) === stem) return true;
+      }
+      return false;
+    }
+
+    var missing = [];
+    String(notes).split('\n').forEach(function (line) {
+      line.split(/[,;]/).forEach(function (raw) {
+        var clause = raw.replace(/^\s*[A-Za-z -]{1,20}:\s*/, function (label) {
+          return /^\s*(plan|request|x-ray|ct|mri|ecg|bloods?|obs|exam|o\/e)\s*:/i.test(label) ? '' : label;
+        }).trim();
+        if (!clause) return;
+        var keys = keyWords(clause);
+        var nums = (clause.match(/\d+(?:\.\d+)?/g) || []).map(function (n) { return String(parseFloat(n)); });
+        if (!keys.length && !nums.length) return;
+        var found = keys.filter(wordPresent).length;
+        var numMissing = nums.some(function (n) { return !draftNums[n]; });
+        if (numMissing || (keys.length && found * 2 < keys.length)) missing.push(clause);
+      });
+    });
+    return missing;
+  }
+
   function cleanBody(raw) {
     var lines = String(raw).replace(/\r/g, '').split('\n').map(function (l) {
       return l.replace(/^\s*#+\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1');
@@ -706,22 +782,39 @@
     var parts = [];
     var warn = false;
     if (check) {
+      var lines = check.missingLines || [];
+      // Only list a missing number separately if it isn't already part
+      // of a missing line.
+      var nums = check.missing.filter(function (n) {
+        return !lines.some(function (l) { return (l.match(/\d+(?:\.\d+)?/g) || []).map(function (x) { return String(parseFloat(x)); }).indexOf(n) !== -1; });
+      });
       if (check.added.length) {
         warn = true;
         parts.push('<p><strong>Check the red parts.</strong> These aren\'t in your notes: ' + listHtml(check.added) + '.</p>');
       }
-      if (check.missing.length) {
+      if (lines.length) {
         warn = true;
-        parts.push('<p><strong>Missing from the draft:</strong> these numbers from your notes don\'t appear: ' + listHtml(check.missing) + '.</p>');
+        parts.push('<p><strong>Possibly left out.</strong> These parts of your notes don\'t seem to be in the draft:</p><ul>' +
+          lines.map(function (l) { return '<li>' + escapeHtml(l) + '</li>'; }).join('') + '</ul>');
+      }
+      if (nums.length) {
+        warn = true;
+        parts.push('<p><strong>Missing numbers:</strong> ' + listHtml(nums) + ' from your notes don\'t appear in the draft.</p>');
       }
       if (!warn) {
-        parts.push('<p><strong>Fact check passed.</strong> Every number, date, body part, side and drug in the draft is in your notes, and no numbers are missing. Still read every line.</p>');
+        parts.push('<p><strong>Checks passed.</strong> Nothing in the draft is flagged as added, and nothing from your notes seems to be missing. Still read every line: wording can change meaning in ways a checker can\'t see.</p>');
       }
     }
+    var notesList = [];
     if (changes && changes.length) {
-      parts.push('<details><summary>Shorthand written out before drafting (' + changes.length + ')</summary><p>' +
+      notesList.push('<details><summary>Shorthand written out before drafting (' + changes.length + ')</summary><p>' +
         listHtml(changes) + '</p></details>');
     }
+    if (check && check.spelling && check.spelling.length) {
+      notesList.push('<details><summary>Changed to UK spelling (' + check.spelling.length + ')</summary><p>' +
+        listHtml(check.spelling) + '</p></details>');
+    }
+    parts = parts.concat(notesList);
     report.innerHTML = parts.join('');
     report.hidden = parts.length === 0;
     report.classList.toggle('is-warning', warn);
@@ -785,8 +878,11 @@
         setStatus(fellBack ? 'Pro couldn\'t run on this device, so this draft used the standard model.' : '');
       }
 
-      var letter = frameLetter(currentType, patient, recipient, cleanBody(rawDraft));
+      var spelled = ukSpelling(cleanBody(rawDraft));
+      var letter = frameLetter(currentType, patient, recipient, spelled.text);
       var check = renderChecked(letter, [patient, recipient, notes].join('\n'));
+      check.missingLines = findMissingClauses(notes, letter);
+      check.spelling = spelled.changes;
       setOutput(letter, check.html);
       showReport(check, changes);
     } catch (err) {
@@ -820,7 +916,7 @@
   });
 
   // Exposed for testing in the browser console.
-  window.__clinidraft = { expandShorthand: expandShorthand, renderChecked: renderChecked, frameLetter: frameLetter, cleanBody: cleanBody };
+  window.__clinidraft = { expandShorthand: expandShorthand, renderChecked: renderChecked, frameLetter: frameLetter, cleanBody: cleanBody, ukSpelling: ukSpelling, findMissingClauses: findMissingClauses };
 
   runHero();
 })();

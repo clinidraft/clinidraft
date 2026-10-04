@@ -922,6 +922,15 @@ mark.flag {
   white-space: nowrap;
 }
 
+.check-report ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.check-report li {
+  margin: 0.15rem 0;
+}
+
 .check-report summary {
   cursor: pointer;
   font-weight: 600;
