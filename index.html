@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clinidraft: turn ward-round notes into draft clinical letters</title>
+<meta name="description" content="A student-built prototype that turns a doctor's bullet-point notes into a first-draft discharge summary, referral or clinic letter, ready for a doctor to check and sign.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232347A3'/%3E%3Cpath d='M5 9c2-2 3 2 5 0s3 2 5 0 2 1 4 0' stroke='%23fff' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3Cpath d='M5 15.5h14' stroke='%23fff' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#tool">Skip to the tool</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="wordmark" href="#top" aria-label="Clinidraft, back to top">
+      <svg class="wordmark-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect width="24" height="24" rx="6"></rect>
+        <path d="M5 9c2-2 3 2 5 0s3 2 5 0 2 1 4 0"></path>
+        <path d="M5 15.5h14"></path>
+      </svg>
+      Clinidraft
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#tool">Try it</a>
+      <a href="#safety">Safety</a>
+      <a href="#about">About</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 class="hero-title">
+          <span class="hero-scrawl">Ward-round notes in,</span>
+          <span class="hero-typed">draft letter out.</span>
+        </h1>
+        <p class="hero-lede">Clinidraft turns the bullet points a doctor jots down between patients into a structured first draft of a discharge summary, referral or clinic letter. The doctor checks it, edits it and signs it.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#tool">Try it now</a>
+          <a class="btn btn-ghost" href="#safety">How it stays safe</a>
+        </div>
+        <p class="hero-small">Free to try. Nothing you type is stored. Use made-up details only.</p>
+      </div>
+
+      <div class="hero-visual" role="img" aria-label="Handwritten ward-round notes next to the typed discharge letter written from them">
+        <div class="notepad" aria-hidden="true">
+          <p class="notepad-title">Bay 4, bed 2</p>
+          <ul>
+            <li>68F, CAP, IV co-amox</li>
+            <li>afebrile since D2</li>
+            <li>CRP 180 &rarr; 40</li>
+            <li>oral abx from D3</li>
+            <li>mobilising, sats 97% RA</li>
+            <li>home today, GP r/v 1/52</li>
+          </ul>
+        </div>
+        <div class="letter-card" aria-hidden="true">
+          <div class="letter-card-head">
+            <span>Discharge summary</span>
+            <span class="draft-stamp">Draft</span>
+          </div>
+          <div class="letter-card-body" id="hero-letter"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem -->
+  <section class="section problem">
+    <div class="wrap narrow">
+      <h2>The letter gets written after the patient has gone</h2>
+      <p>Every ward round, clinic and discharge ends with the same job: turning what happened into a letter for the GP, a specialist or the patient. The facts are usually already written down, scribbled in shorthand between patients. Shaping them into a properly structured letter still takes time out of a day that's already full.</p>
+      <p>Clinidraft is a prototype that tries to close that gap. Give it the shorthand and it writes a first draft in the right format, so the doctor's time goes on checking and correcting rather than starting from a blank page.</p>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="section how" id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li class="step">
+          <span class="step-num" aria-hidden="true">1</span>
+          <h3>Jot the findings</h3>
+          <p>Type the notes the way a doctor already writes them: short lines, abbreviations and all.</p>
+        </li>
+        <li class="step">
+          <span class="step-num" aria-hidden="true">2</span>
+          <h3>Clinidraft writes the draft</h3>
+          <p>It shapes the notes into the right layout for the letter type, and marks anything the notes didn't cover instead of guessing.</p>
+        </li>
+        <li class="step">
+          <span class="step-num" aria-hidden="true">3</span>
+          <h3>A doctor checks and signs</h3>
+          <p>Nothing leaves the page on its own. Every draft is reviewed, corrected and approved by a doctor. Clinidraft drafts; the doctor decides.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Tool -->
+  <section class="section tool" id="tool">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Try it</h2>
+        <p>Pick a letter type, add some made-up notes, and choose how the draft gets written.</p>
+      </div>
+
+      <div class="tool-grid">
+        <form class="panel" id="generate-form" novalidate>
+
+          <div class="field">
+            <span class="field-label" id="type-label">Letter type</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="type-label">
+              <button type="button" role="radio" aria-checked="true" data-type="discharge">Discharge summary</button>
+              <button type="button" role="radio" aria-checked="false" data-type="referral">Referral</button>
+              <button type="button" role="radio" aria-checked="false" data-type="clinic">Clinic letter</button>
+            </div>
+          </div>
+
+          <div class="field-pair">
+            <div class="field">
+              <label for="patient-info">Patient <span class="optional">optional</span></label>
+              <input type="text" id="patient-info" placeholder="e.g. 68-year-old woman" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="recipient">Recipient <span class="optional">optional</span></label>
+              <input type="text" id="recipient" placeholder="e.g. her GP practice" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="label-row">
+              <label for="bullets">Clinical notes</label>
+              <button type="button" class="text-btn" id="example-btn">Fill in an example</button>
+            </div>
+            <textarea id="bullets" rows="6" placeholder="One finding per line, e.g.&#10;Admitted with pneumonia, IV antibiotics&#10;CRP falling&#10;Plan: home today, GP review in 1 week"></textarea>
+          </div>
+
+          <fieldset class="modes">
+            <legend>Write the draft with</legend>
+            <div class="mode-grid">
+              <label class="mode">
+                <input type="radio" name="mode" value="template" checked>
+                <span class="mode-name">Template</span>
+                <span class="mode-desc">Instant. No AI. Lays your notes out as a letter.</span>
+              </label>
+              <label class="mode">
+                <input type="radio" name="mode" value="standard">
+                <span class="mode-name">On-device AI</span>
+                <span class="mode-desc">Free and private. About 1&nbsp;GB download, once. Phones and tablets.</span>
+              </label>
+              <label class="mode">
+                <input type="radio" name="mode" value="pro">
+                <span class="mode-name">On-device AI Pro</span>
+                <span class="mode-desc">Better writing. About 2.5&nbsp;GB download, once. Computers.</span>
+              </label>
+              <label class="mode">
+                <input type="radio" name="mode" value="claude">
+                <span class="mode-name">Claude</span>
+                <span class="mode-desc">Best quality. Needs your own API key.</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <p class="mode-note" id="mode-note" hidden></p>
+
+          <div class="progress" id="progress" hidden>
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+
+          <div class="field" id="api-key-wrap" hidden>
+            <label for="api-key">Claude API key</label>
+            <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off">
+            <p class="hint">Sent straight from your browser to Anthropic for this one draft. It isn't saved and is forgotten when you leave the page. Keys come from <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="generate-btn">Write draft</button>
+            <span class="status" id="status" aria-live="polite"></span>
+          </div>
+
+          <div class="error" id="error" role="alert" hidden></div>
+        </form>
+
+        <div class="paper">
+          <div class="paper-head">
+            <div class="paper-org">
+              <strong>Clinidraft demo</strong>
+              <span>Not a real hospital or patient</span>
+            </div>
+            <span class="pill" id="mode-pill">Template</span>
+          </div>
+          <div class="paper-body is-empty" id="letter-output" aria-live="polite">Your draft will appear here.</div>
+          <div class="paper-foot">
+            <span class="paper-legend"><mark>[not documented]</mark> marks details the notes didn't include</span>
+            <span class="paper-buttons">
+              <button type="button" class="small-btn" id="copy-btn">Copy</button>
+              <button type="button" class="small-btn" id="clear-btn">Clear</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Safety -->
+  <section class="section safety" id="safety">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>What it is, and what it isn't</h2>
+        <p>Paperwork is a sensible place for AI to help, but only inside clear limits. These are Clinidraft's.</p>
+      </div>
+      <ul class="safety-list">
+        <li>
+          <h3>A drafting aid, not a decision-maker</h3>
+          <p>It never diagnoses, prescribes, sends or files anything. A qualified clinician must review and approve every draft before it is used.</p>
+        </li>
+        <li>
+          <h3>No real patient data</h3>
+          <p>It isn't connected to any clinical system. Only ever give it made-up or fully anonymised details.</p>
+        </li>
+        <li>
+          <h3>It flags what it doesn't know</h3>
+          <p>The AI modes are told to use only the notes they're given and to write <mark>[not documented]</mark> instead of inventing anything. Small models still make mistakes, so every line needs checking.</p>
+        </li>
+        <li>
+          <h3>Private by design</h3>
+          <p>The site has no server and stores nothing. On-device AI keeps your notes inside your browser. Claude mode sends them only to Anthropic, using your own key.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- About -->
+  <section class="section about" id="about">
+    <div class="wrap narrow">
+      <h2>About this project</h2>
+      <div class="about-grid">
+        <div class="about-mark" aria-hidden="true">S</div>
+        <div class="about-body">
+          <p>I'm Suriya, a student in the UK working toward a medicine application, with neurosurgery as my long-term goal.</p>
+          <p>Paperwork is less exciting than diagnosis or imaging, but it takes up a large part of a doctor's day, and it's a problem AI can help with without touching clinical decisions. That's why I built this first. Making it taught me as much about where AI goes wrong as where it helps.</p>
+          <p>It sits alongside two other projects I'm working on: a systematic review of surgical timing in acute traumatic spinal cord injury, and a comparison of machine-learning approaches to motor decoding in brain&ndash;computer interfaces for people with chronic spinal cord injury.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span>Clinidraft is a student-built prototype, not a medical device.</span>
+    <span>Built by Suriya, 2026</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
